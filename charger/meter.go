@@ -12,8 +12,13 @@ import (
 // MeterValues updates meter values locally and sends to server if connected
 func (c *Charger) MeterValues() error {
 	c.mu.Lock()
+	// Calculate power based on current limit (P = I * V)
+	currentPower := c.current * c.config.Voltage
+	if currentPower > c.config.MaxPower {
+		currentPower = c.config.MaxPower
+	}
 	// Simulate energy consumption
-	energyWh := int(c.config.MaxPower * float64(c.config.MeterValuesInterval) / 3600 * 0.5)
+	energyWh := int(currentPower * float64(c.config.MeterValuesInterval) / 3600)
 	c.meterValue += energyWh
 
 	// Update SOC
@@ -25,6 +30,8 @@ func (c *Charger) MeterValues() error {
 
 	meterValue := c.meterValue
 	soc := c.soc
+	current := c.current
+	power := currentPower
 	transactionId := c.transactionId
 	transactionIdStr := c.transactionIdStr
 	isConnected := c.isConnected
@@ -32,19 +39,19 @@ func (c *Charger) MeterValues() error {
 	seqNo := c.seqNo
 	c.mu.Unlock()
 
-	log.Printf("MeterValues: energy=%d Wh, SoC=%.1f%%", meterValue, soc)
+	log.Printf("MeterValues: energy=%d Wh, current=%.1f A, power=%.1f W, SoC=%.1f%%", meterValue, current, power, soc)
 
 	// Send to server if connected
 	if isConnected {
 		if c.config.IsOCPP16() {
-			return c.sendMeterValuesV16(meterValue, soc, transactionId)
+			return c.sendMeterValuesV16(meterValue, soc, current, power, transactionId)
 		}
-		return c.sendMeterValuesV201(meterValue, soc, transactionIdStr, seqNo)
+		return c.sendMeterValuesV201(meterValue, soc, current, power, transactionIdStr, seqNo)
 	}
 	return nil
 }
 
-func (c *Charger) sendMeterValuesV16(meterValue int, soc float64, transactionId int) error {
+func (c *Charger) sendMeterValuesV16(meterValue int, soc, current, power float64, transactionId int) error {
 	req := v16.MeterValuesRequest{
 		ConnectorId:   c.config.ConnectorID,
 		TransactionId: transactionId,
@@ -59,13 +66,13 @@ func (c *Charger) sendMeterValuesV16(meterValue int, soc float64, transactionId 
 						Unit:      "Wh",
 					},
 					{
-						Value:     fmt.Sprintf("%.1f", c.config.MaxCurrent*0.5),
+						Value:     fmt.Sprintf("%.1f", current),
 						Context:   "Sample.Periodic",
 						Measurand: "Current.Import",
 						Unit:      "A",
 					},
 					{
-						Value:     fmt.Sprintf("%.1f", c.config.MaxPower*0.5),
+						Value:     fmt.Sprintf("%.1f", power),
 						Context:   "Sample.Periodic",
 						Measurand: "Power.Active.Import",
 						Unit:      "W",
@@ -90,7 +97,7 @@ func (c *Charger) sendMeterValuesV16(meterValue int, soc float64, transactionId 
 	return nil
 }
 
-func (c *Charger) sendMeterValuesV201(meterValue int, soc float64, transactionIdStr string, seqNo int) error {
+func (c *Charger) sendMeterValuesV201(meterValue int, soc, current, power float64, transactionIdStr string, seqNo int) error {
 	req := v201.TransactionEventRequest{
 		EventType:     v201.TransactionEventUpdated,
 		Timestamp:     time.Now().UTC().Format(time.RFC3339),
@@ -113,7 +120,7 @@ func (c *Charger) sendMeterValuesV201(meterValue int, soc float64, transactionId
 						},
 					},
 					{
-						Value:     c.config.MaxCurrent * 0.5,
+						Value:     current,
 						Context:   "Sample.Periodic",
 						Measurand: "Current.Import",
 						UnitOfMeasure: &v201.UnitOfMeasure{
@@ -121,7 +128,7 @@ func (c *Charger) sendMeterValuesV201(meterValue int, soc float64, transactionId
 						},
 					},
 					{
-						Value:     c.config.MaxPower * 0.5,
+						Value:     power,
 						Context:   "Sample.Periodic",
 						Measurand: "Power.Active.Import",
 						UnitOfMeasure: &v201.UnitOfMeasure{

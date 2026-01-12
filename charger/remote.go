@@ -151,3 +151,91 @@ func (c *Charger) handleRequestStopTransactionV201(uniqueId string, payload json
 		}()
 	}
 }
+
+// handleSetChargingProfileV16 handles SetChargingProfile from server (OCPP 1.6)
+func (c *Charger) handleSetChargingProfileV16(uniqueId string, payload json.RawMessage) {
+	var req v16.SetChargingProfileRequest
+	if err := json.Unmarshal(payload, &req); err != nil {
+		log.Printf("Failed to parse SetChargingProfile: %v", err)
+		return
+	}
+
+	log.Printf("Received SetChargingProfile: connectorId=%d", req.ConnectorId)
+
+	status := "Accepted"
+
+	// Extract current from charging profile (OCPP 1.6 only supports Amperes)
+	if req.ChargingProfile != nil && req.ChargingProfile.ChargingSchedule != nil {
+		schedule := req.ChargingProfile.ChargingSchedule
+		if len(schedule.ChargingSchedulePeriod) > 0 {
+			limit := schedule.ChargingSchedulePeriod[0].Limit
+			unit := schedule.ChargingRateUnit
+
+			if unit != "A" {
+				log.Printf("OCPP 1.6 only supports chargingRateUnit 'A', got: %s", unit)
+				status = "Rejected"
+			} else {
+				if err := c.SetCurrent(limit); err != nil {
+					log.Printf("Failed to set current: %v", err)
+					status = "Rejected"
+				}
+			}
+		}
+	}
+
+	resp := v16.SetChargingProfileResponse{
+		Status: status,
+	}
+
+	if err := c.sendCallResult(uniqueId, resp); err != nil {
+		log.Printf("Failed to send SetChargingProfile response: %v", err)
+	}
+}
+
+// handleSetChargingProfileV201 handles SetChargingProfile from server (OCPP 2.0.1)
+func (c *Charger) handleSetChargingProfileV201(uniqueId string, payload json.RawMessage) {
+	var req v201.SetChargingProfileRequest
+	if err := json.Unmarshal(payload, &req); err != nil {
+		log.Printf("Failed to parse SetChargingProfile: %v", err)
+		return
+	}
+
+	log.Printf("Received SetChargingProfile: evseId=%d", req.EvseId)
+
+	status := "Accepted"
+
+	// Extract current limit from charging profile
+	if req.ChargingProfile != nil && len(req.ChargingProfile.ChargingSchedule) > 0 {
+		schedule := req.ChargingProfile.ChargingSchedule[0]
+		if len(schedule.ChargingSchedulePeriod) > 0 {
+			limit := schedule.ChargingSchedulePeriod[0].Limit
+			unit := schedule.ChargingRateUnit
+
+			var currentAmps float64
+			if unit == "A" {
+				currentAmps = limit
+			} else if unit == "W" {
+				// Convert power to current
+				currentAmps = limit / c.config.Voltage
+			} else {
+				log.Printf("Unknown charging rate unit: %s", unit)
+				status = "Rejected"
+			}
+
+			if status == "Accepted" {
+				if err := c.SetCurrent(currentAmps); err != nil {
+					log.Printf("Failed to set current: %v", err)
+					status = "Rejected"
+				}
+			}
+		}
+	}
+
+	resp := v201.SetChargingProfileResponse{
+		Status: status,
+	}
+
+	if err := c.sendCallResult(uniqueId, resp); err != nil {
+		log.Printf("Failed to send SetChargingProfile response: %v", err)
+	}
+}

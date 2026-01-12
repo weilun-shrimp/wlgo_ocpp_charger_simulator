@@ -29,6 +29,7 @@ type Config struct {
 	MaxPower            float64    `yaml:"max_power"`
 	MinCurrent          float64    `yaml:"min_current"`
 	MinPower            float64    `yaml:"min_power"`
+	Voltage             float64    `yaml:"voltage"` // Voltage in V (for power calculation)
 	ConnectorID         int        `yaml:"connector_id"`
 	MeterValuesInterval int        `yaml:"meter_values_interval"`
 	// EV Battery simulation
@@ -48,6 +49,7 @@ func Load(path string) (*Config, error) {
 		InitialStatus:       "Available",
 		MinCurrent:          0,
 		MinPower:            0,
+		Voltage:             230, // Default 230V
 		ConnectorID:         1,
 		MeterValuesInterval: 30,
 		InitialSOC:          20,    // Default 20%
@@ -101,6 +103,10 @@ func (c *Config) Validate() error {
 
 	if c.MinPower > c.MaxPower {
 		return fmt.Errorf("min_power cannot exceed max_power")
+	}
+
+	if c.Voltage <= 0 {
+		return fmt.Errorf("voltage must be positive")
 	}
 
 	if c.InitialSOC < 0 || c.InitialSOC > 100 {

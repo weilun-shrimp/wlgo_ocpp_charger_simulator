@@ -29,6 +29,7 @@ func main() {
 	log.Printf("Charger ID: %s", cfg.ChargerID)
 	log.Printf("OCPP Version: %s", cfg.OCPPVersion)
 	log.Printf("Server URL: %s", cfg.ServerURL)
+	log.Printf("Voltage: %.1f V", cfg.Voltage)
 	log.Printf("Max Current: %.1f A", cfg.MaxCurrent)
 	log.Printf("Max Power: %.1f W", cfg.MaxPower)
 	log.Printf("Initial Status: %s", cfg.InitialStatus)
@@ -198,10 +199,35 @@ func interactiveLoop(sim *charger.Charger, cfg *config.Config) {
 				fmt.Printf("SOC set to: %.1f%%\n", soc)
 			}
 
+		case "current":
+			if len(parts) < 2 {
+				fmt.Printf("Usage: current <amperes> (min: %.1f A, max: %.1f A)\n", cfg.MinCurrent, cfg.MaxCurrent)
+				fmt.Printf("Current: %.1f A\n", sim.GetCurrent())
+				continue
+			}
+			var current float64
+			if _, err := fmt.Sscanf(parts[1], "%f", &current); err != nil {
+				fmt.Printf("Error: invalid current value: %s\n", parts[1])
+				continue
+			}
+			if err := sim.SetCurrent(current); err != nil {
+				fmt.Printf("Error: %v\n", err)
+			} else {
+				fmt.Printf("Current set to: %.1f A\n", current)
+			}
+
 		case "info":
 			fmt.Printf("Connected: %v\n", sim.IsConnected())
 			fmt.Printf("Status: %s\n", sim.GetStatus())
 			fmt.Printf("Charging: %v\n", sim.IsCharging())
+			current := sim.GetCurrent()
+			power := current * cfg.Voltage
+			if power > cfg.MaxPower {
+				power = cfg.MaxPower
+			}
+			fmt.Printf("Voltage: %.1f V\n", cfg.Voltage)
+			fmt.Printf("Current: %.1f A\n", current)
+			fmt.Printf("Power: %.1f W\n", power)
 			fmt.Printf("SOC: %.1f%%\n", sim.GetSOC())
 			if plate := sim.GetLicensePlate(); plate != "" {
 				fmt.Printf("License Plate: %s\n", plate)
@@ -229,6 +255,7 @@ func printHelp(cfg *config.Config) {
 	fmt.Println("  plate <plate>     - Send license plate via DataTransfer")
 	fmt.Println("  meter             - Send MeterValues")
 	fmt.Println("  soc <0-100>       - Set State of Charge")
+	fmt.Printf("  current <amps>    - Set charging current (%.1f-%.1f A)\n", cfg.MinCurrent, cfg.MaxCurrent)
 	fmt.Println("  info              - Show current charger status")
 	fmt.Println("  quit/exit         - Exit the simulator (use Ctrl+C)")
 	fmt.Println()

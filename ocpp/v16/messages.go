@@ -21,6 +21,7 @@ const (
 	ActionMeterValues            = "MeterValues"
 	ActionRemoteStartTransaction = "RemoteStartTransaction"
 	ActionRemoteStopTransaction  = "RemoteStopTransaction"
+	ActionSetChargingProfile     = "SetChargingProfile"
 	ActionHeartbeat              = "Heartbeat"
 	ActionDataTransfer           = "DataTransfer"
 )
@@ -196,6 +197,17 @@ type RemoteStopTransactionRequest struct {
 // RemoteStopTransactionResponse is the response to RemoteStopTransaction
 type RemoteStopTransactionResponse struct {
 	Status string `json:"status"` // Accepted, Rejected
+}
+
+// SetChargingProfileRequest is the request from server to set charging profile
+type SetChargingProfileRequest struct {
+	ConnectorId     int              `json:"connectorId"`
+	ChargingProfile *ChargingProfile `json:"csChargingProfiles"`
+}
+
+// SetChargingProfileResponse is the response to SetChargingProfile
+type SetChargingProfileResponse struct {
+	Status string `json:"status"` // Accepted, Rejected, NotSupported
 }
 
 // HeartbeatRequest is the request for Heartbeat

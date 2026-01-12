@@ -20,6 +20,7 @@ const (
 	ActionMeterValues             = "MeterValues"
 	ActionRequestStartTransaction = "RequestStartTransaction"
 	ActionRequestStopTransaction  = "RequestStopTransaction"
+	ActionSetChargingProfile      = "SetChargingProfile"
 	ActionHeartbeat               = "Heartbeat"
 	ActionDataTransfer            = "DataTransfer"
 )
@@ -329,6 +330,18 @@ type RequestStopTransactionRequest struct {
 
 // RequestStopTransactionResponse is the response to RequestStopTransaction
 type RequestStopTransactionResponse struct {
+	Status     string      `json:"status"` // Accepted, Rejected
+	StatusInfo *StatusInfo `json:"statusInfo,omitempty"`
+}
+
+// SetChargingProfileRequest is the request from server to set charging profile
+type SetChargingProfileRequest struct {
+	EvseId          int              `json:"evseId"`
+	ChargingProfile *ChargingProfile `json:"chargingProfile"`
+}
+
+// SetChargingProfileResponse is the response to SetChargingProfile
+type SetChargingProfileResponse struct {
 	Status     string      `json:"status"` // Accepted, Rejected
 	StatusInfo *StatusInfo `json:"statusInfo,omitempty"`
 }

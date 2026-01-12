@@ -27,6 +27,7 @@ type Charger struct {
 	seqNo            int
 	isCharging       bool
 	isConnected      bool
+	current          float64       // Current limit in Amperes (between MinCurrent and MaxCurrent)
 	stopCh           chan struct{} // Stop channel for connect to server
 	meterStopCh      chan struct{} // Stop channel for meter loop
 	pendingCalls     map[string]chan []byte
@@ -46,6 +47,7 @@ func New(cfg *config.Config) (*Charger, error) {
 		status:       cfg.InitialStatus,
 		meterValue:   0,
 		soc:          cfg.InitialSOC,
+		current:      cfg.MaxCurrent, // Default to max current
 		stopCh:       make(chan struct{}),
 		pendingCalls: make(map[string]chan []byte),
 	}, nil
@@ -160,6 +162,28 @@ func (c *Charger) SetLicensePlate(plate string) {
 	c.mu.Lock()
 	c.licensePlate = plate
 	c.mu.Unlock()
+}
+
+// GetCurrent returns the current in Amperes
+func (c *Charger) GetCurrent() float64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.current
+}
+
+// SetCurrent sets the current in Amperes (bounded by MinCurrent and MaxCurrent)
+func (c *Charger) SetCurrent(current float64) error {
+	if current < c.config.MinCurrent {
+		return fmt.Errorf("current %.1fA is below minimum %.1fA", current, c.config.MinCurrent)
+	}
+	if current > c.config.MaxCurrent {
+		return fmt.Errorf("current %.1fA exceeds maximum %.1fA", current, c.config.MaxCurrent)
+	}
+	c.mu.Lock()
+	c.current = current
+	c.mu.Unlock()
+	log.Printf("Current set to %.1f A", current)
+	return nil
 }
 
 // Plugin simulates car plugging in

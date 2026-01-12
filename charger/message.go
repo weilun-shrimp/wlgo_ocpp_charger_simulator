@@ -3,6 +3,7 @@ package charger
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"time"
 
@@ -13,6 +14,8 @@ import (
 
 // receiveMessages handles incoming messages from the server
 func (c *Charger) receiveMessages() {
+	defer c.Disconnect()
+
 	for {
 		select {
 		case <-c.stopCh:
@@ -20,7 +23,11 @@ func (c *Charger) receiveMessages() {
 		default:
 			msg, err := c.conn.GetNextMsg()
 			if err != nil {
-				log.Printf("Error receiving message: %v", err)
+				if err == io.EOF {
+					log.Printf("Server closed connection (EOF)")
+				} else {
+					log.Printf("Error receiving message: %v", err)
+				}
 				return
 			}
 
@@ -100,6 +107,8 @@ func (c *Charger) handleCallV16(uniqueId, action string, payload json.RawMessage
 		c.handleRemoteStartTransactionV16(uniqueId, payload)
 	case v16.ActionRemoteStopTransaction:
 		c.handleRemoteStopTransactionV16(uniqueId, payload)
+	case v16.ActionSetChargingProfile:
+		c.handleSetChargingProfileV16(uniqueId, payload)
 	default:
 		log.Printf("Unknown action: %s", action)
 	}
@@ -112,6 +121,8 @@ func (c *Charger) handleCallV201(uniqueId, action string, payload json.RawMessag
 		c.handleRequestStartTransactionV201(uniqueId, payload)
 	case v201.ActionRequestStopTransaction:
 		c.handleRequestStopTransactionV201(uniqueId, payload)
+	case v201.ActionSetChargingProfile:
+		c.handleSetChargingProfileV201(uniqueId, payload)
 	default:
 		log.Printf("Unknown action: %s", action)
 	}

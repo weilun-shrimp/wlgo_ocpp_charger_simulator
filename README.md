@@ -14,6 +14,7 @@ cp config.example.yaml config.yaml
 ocpp_version: "1.6"
 charger_id: "CHARGER001"
 server_url: "ws://localhost:8080/ocpp/CHARGER001"
+voltage: 230
 max_current: 32
 max_power: 22000
 ```
@@ -38,6 +39,7 @@ go run main.go --config config.yaml
 | `plate <plate>` | Send license plate via DataTransfer |
 | `meter` | Send MeterValues manually |
 | `soc <0-100>` | Set State of Charge |
+| `current <amps>` | Set charging current (local control) |
 | `info` | Show current charger status |
 
 ## Typical Charging Flow
@@ -68,6 +70,7 @@ go run main.go --config config.yaml
 | `max_power` | Maximum power (W) | Required |
 | `min_current` | Minimum current (A) | 0 |
 | `min_power` | Minimum power (W) | 0 |
+| `voltage` | Voltage (V) for power calculation | 230 |
 | `connector_id` | Connector ID | 1 |
 | `initial_status` | Initial charger status | Available |
 | `initial_soc` | Initial State of Charge (%) | 20 |
@@ -98,6 +101,7 @@ tls:
 
 - Supports OCPP 1.6 and 2.0.1
 - Interactive CLI
+- Current control (local via CLI, remote via SetChargingProfile)
 - Auto SOC increase during charging
 - License plate sending via DataTransfer
 - TLS/mTLS support
@@ -117,6 +121,7 @@ tls:
 | Heartbeat | CP -> CS | Keep-alive |
 | RemoteStartTransaction | CS -> CP | Remote start (handled) |
 | RemoteStopTransaction | CS -> CP | Remote stop (handled) |
+| SetChargingProfile | CS -> CP | Remote current (1.6: A only, 2.0.1: A or W) |
 
 ## Build
 
