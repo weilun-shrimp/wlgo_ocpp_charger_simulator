@@ -1,0 +1,47 @@
+# OCPP Charger Simulator Configuration
+
+# OCPP version: "1.6" or "2.0.1"
+ocpp_version: "1.6"
+
+# Charger identity (used for BootNotification)
+charger_id: "CHARGER001"
+
+# Server WebSocket URL (full path including charger endpoint)
+# Use ws:// for non-TLS, wss:// for TLS
+# Example formats:
+#   ws://localhost:8080/ocpp/CHARGER001
+#   wss://server.example.com/station_id/charger/CHARGER001/ocpp/1.6
+server_url: "ws://localhost:8080/ocpp/CHARGER001"
+
+# TLS Configuration (Optional)
+# Required when using wss:// URLs
+tls:
+  # Server certificate verification options (use one of these):
+  ca_file: "/path/to/ca.crt"              # CA certificate to verify server cert chain
+  server_cert_file: "/path/to/server.crt" # Trust specific server certificate (for self-signed)
+  skip_verify: false                      # Skip all server cert verification (insecure)
+
+  # Client certificate authentication (mTLS):
+  cert_file: "/path/to/client.crt"        # Client certificate file
+  key_file: "/path/to/client.key"         # Client private key file
+
+# Charger Status Configuration
+# Valid values for OCPP 1.6: Available, Preparing, Charging, SuspendedEVSE, SuspendedEV, Finishing, Reserved, Unavailable, Faulted
+# Valid values for OCPP 2.0.1: Available, Occupied, Reserved, Unavailable, Faulted
+initial_status: "Available"  # Optional, default: Available
+
+# Power and Current Limits
+max_current: 32     # Maximum current in Amperes (A)
+max_power: 22000    # Maximum power in Watts (W)
+min_current: 6      # Optional, default: 0 - Minimum current in Amperes (A)
+min_power: 0        # Optional, default: 0 - Minimum power in Watts (W)
+
+# Connector Configuration
+connector_id: 1     # Connector ID for this charger
+
+# MeterValues interval in seconds
+meter_values_interval: 20
+
+# EV Battery Simulation
+initial_soc: 20           # Initial State of Charge in % (0-100), default: 20
+battery_capacity: 60000   # Battery capacity in Wh (60000 = 60 kWh), default: 60000
