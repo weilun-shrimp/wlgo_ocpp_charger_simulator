@@ -41,6 +41,13 @@ func (c *Charger) bootNotificationV16() error {
 			return fmt.Errorf("failed to parse BootNotification response: %w", err)
 		}
 		log.Printf("BootNotification response: status=%s, interval=%d", bootResp.Status, bootResp.Interval)
+
+		// Use server-provided interval if available
+		if bootResp.Interval > 0 {
+			c.SetHeartbeatInterval(bootResp.Interval)
+		}
+		// Start heartbeat loop
+		go c.StartHeartbeatLoop()
 	}
 
 	return nil
@@ -73,6 +80,13 @@ func (c *Charger) bootNotificationV201() error {
 			return fmt.Errorf("failed to parse BootNotification response: %w", err)
 		}
 		log.Printf("BootNotification response: status=%s, interval=%d", bootResp.Status, bootResp.Interval)
+
+		// Use server-provided interval if available
+		if bootResp.Interval > 0 {
+			c.SetHeartbeatInterval(bootResp.Interval)
+		}
+		// Start heartbeat loop
+		go c.StartHeartbeatLoop()
 	}
 
 	return nil

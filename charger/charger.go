@@ -27,11 +27,13 @@ type Charger struct {
 	seqNo            int
 	isCharging       bool
 	isConnected      bool
-	current          float64       // Current limit in Amperes (between MinCurrent and MaxCurrent)
-	stopCh           chan struct{} // Stop channel for connect to server
-	meterStopCh      chan struct{} // Stop channel for meter loop
-	pendingCalls     map[string]chan []byte
-	pendingMu        sync.Mutex
+	current           float64       // Current limit in Amperes (between MinCurrent and MaxCurrent)
+	stopCh            chan struct{} // Stop channel for connect to server
+	meterStopCh       chan struct{} // Stop channel for meter loop
+	heartbeatInterval int           // Heartbeat interval in seconds (from config or server)
+	heartbeatStopCh   chan struct{} // Stop channel for heartbeat loop
+	pendingCalls      map[string]chan []byte
+	pendingMu         sync.Mutex
 }
 
 // New creates a new Charger instance
@@ -95,6 +97,12 @@ func (c *Charger) Disconnect() {
 
 	if !c.isConnected {
 		return
+	}
+
+	// Stop heartbeat loop
+	if c.heartbeatStopCh != nil {
+		close(c.heartbeatStopCh)
+		c.heartbeatStopCh = nil
 	}
 
 	close(c.stopCh)
