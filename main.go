@@ -96,8 +96,8 @@ func interactiveLoop(sim *charger.Charger, cfg *config.Config) {
 				continue
 			}
 
-			// Send initial StatusNotification
-			if err := sim.StatusNotification(cfg.InitialStatus); err != nil {
+			// Send current StatusNotification
+			if err := sim.StatusNotification(sim.GetStatus()); err != nil {
 				fmt.Printf("StatusNotification failed: %v\n", err)
 			}
 
