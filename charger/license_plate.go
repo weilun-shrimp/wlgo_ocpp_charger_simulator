@@ -11,8 +11,9 @@ import (
 
 // LicensePlateData represents the license plate data to send
 type LicensePlateData struct {
-	LicensePlate string `json:"licensePlate"`
-	ConnectorId  int    `json:"connectorId"`
+	ConnectorId   int    `json:"connectorId"`
+	TransactionId string `json:"transactionId"`
+	LicencePlate  string `json:"licencePlate"`
 }
 
 // SetLicensePlateAndSend sets the license plate locally and sends to server if connected
@@ -40,9 +41,14 @@ func (c *Charger) SendLicensePlate(licensePlate string) error {
 }
 
 func (c *Charger) sendLicensePlateV16(licensePlate string) error {
+	c.mu.RLock()
+	transactionId := c.transactionId
+	c.mu.RUnlock()
+
 	data := LicensePlateData{
-		LicensePlate: licensePlate,
-		ConnectorId:  c.config.ConnectorID,
+		ConnectorId:   c.config.ConnectorID,
+		TransactionId: fmt.Sprintf("%d", transactionId),
+		LicencePlate:  licensePlate,
 	}
 
 	dataJSON, err := json.Marshal(data)
@@ -52,7 +58,7 @@ func (c *Charger) sendLicensePlateV16(licensePlate string) error {
 
 	req := v16.DataTransferRequest{
 		VendorId:  "LicensePlate",
-		MessageId: "EVLicensePlate",
+		MessageId: "LicencePlate",
 		Data:      string(dataJSON),
 	}
 
@@ -78,9 +84,14 @@ func (c *Charger) sendLicensePlateV16(licensePlate string) error {
 }
 
 func (c *Charger) sendLicensePlateV201(licensePlate string) error {
+	c.mu.RLock()
+	transactionIdStr := c.transactionIdStr
+	c.mu.RUnlock()
+
 	data := LicensePlateData{
-		LicensePlate: licensePlate,
-		ConnectorId:  c.config.ConnectorID,
+		ConnectorId:   c.config.ConnectorID,
+		TransactionId: transactionIdStr,
+		LicencePlate:  licensePlate,
 	}
 
 	dataJSON, err := json.Marshal(data)
@@ -90,7 +101,7 @@ func (c *Charger) sendLicensePlateV201(licensePlate string) error {
 
 	req := v201.DataTransferRequest{
 		VendorId:  "LicensePlate",
-		MessageId: "EVLicensePlate",
+		MessageId: "LicencePlate",
 		Data:      string(dataJSON),
 	}
 

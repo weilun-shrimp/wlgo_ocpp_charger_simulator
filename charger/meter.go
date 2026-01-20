@@ -39,19 +39,21 @@ func (c *Charger) MeterValues() error {
 	seqNo := c.seqNo
 	c.mu.Unlock()
 
-	log.Printf("MeterValues: energy=%d Wh, current=%.1f A, power=%.1f W, SoC=%.1f%%", meterValue, current, power, soc)
+	voltage := c.config.Voltage
+
+	log.Printf("MeterValues: energy=%d Wh, voltage=%.1f V, current=%.1f A, power=%.1f W, SoC=%.1f%%", meterValue, voltage, current, power, soc)
 
 	// Send to server if connected
 	if isConnected {
 		if c.config.IsOCPP16() {
-			return c.sendMeterValuesV16(meterValue, soc, current, power, transactionId)
+			return c.sendMeterValuesV16(meterValue, soc, voltage, current, power, transactionId)
 		}
-		return c.sendMeterValuesV201(meterValue, soc, current, power, transactionIdStr, seqNo)
+		return c.sendMeterValuesV201(meterValue, soc, voltage, current, power, transactionIdStr, seqNo)
 	}
 	return nil
 }
 
-func (c *Charger) sendMeterValuesV16(meterValue int, soc, current, power float64, transactionId int) error {
+func (c *Charger) sendMeterValuesV16(meterValue int, soc, voltage, current, power float64, transactionId int) error {
 	req := v16.MeterValuesRequest{
 		ConnectorId:   c.config.ConnectorID,
 		TransactionId: transactionId,
@@ -64,6 +66,12 @@ func (c *Charger) sendMeterValuesV16(meterValue int, soc, current, power float64
 						Context:   "Sample.Periodic",
 						Measurand: "Energy.Active.Import.Register",
 						Unit:      "Wh",
+					},
+					{
+						Value:     fmt.Sprintf("%.1f", voltage),
+						Context:   "Sample.Periodic",
+						Measurand: "Voltage",
+						Unit:      "V",
 					},
 					{
 						Value:     fmt.Sprintf("%.1f", current),
@@ -97,7 +105,7 @@ func (c *Charger) sendMeterValuesV16(meterValue int, soc, current, power float64
 	return nil
 }
 
-func (c *Charger) sendMeterValuesV201(meterValue int, soc, current, power float64, transactionIdStr string, seqNo int) error {
+func (c *Charger) sendMeterValuesV201(meterValue int, soc, voltage, current, power float64, transactionIdStr string, seqNo int) error {
 	req := v201.TransactionEventRequest{
 		EventType:     v201.TransactionEventUpdated,
 		Timestamp:     time.Now().UTC().Format(time.RFC3339),
@@ -117,6 +125,14 @@ func (c *Charger) sendMeterValuesV201(meterValue int, soc, current, power float6
 						Measurand: "Energy.Active.Import.Register",
 						UnitOfMeasure: &v201.UnitOfMeasure{
 							Unit: "Wh",
+						},
+					},
+					{
+						Value:     voltage,
+						Context:   "Sample.Periodic",
+						Measurand: "Voltage",
+						UnitOfMeasure: &v201.UnitOfMeasure{
+							Unit: "V",
 						},
 					},
 					{

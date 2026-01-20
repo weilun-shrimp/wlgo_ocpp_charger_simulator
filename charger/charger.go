@@ -28,6 +28,7 @@ type Charger struct {
 	isCharging       bool
 	isConnected      bool
 	current           float64       // Current limit in Amperes (between MinCurrent and MaxCurrent)
+	power             float64       // Power limit in Watts (between MinPower and MaxPower)
 	stopCh            chan struct{} // Stop channel for connect to server
 	meterStopCh       chan struct{} // Stop channel for meter loop
 	heartbeatInterval int           // Heartbeat interval in seconds (from config or server)
@@ -50,6 +51,7 @@ func New(cfg *config.Config) (*Charger, error) {
 		meterValue:   0,
 		soc:          cfg.InitialSOC,
 		current:      cfg.MaxCurrent, // Default to max current
+		power:        cfg.MaxPower,   // Default to max power
 		stopCh:       make(chan struct{}),
 		pendingCalls: make(map[string]chan []byte),
 	}, nil
@@ -180,17 +182,79 @@ func (c *Charger) GetCurrent() float64 {
 }
 
 // SetCurrent sets the current in Amperes (bounded by MinCurrent and MaxCurrent)
+// Setting current to 0 will suspend charging (SuspendedEVSE)
+// Setting current > 0 from SuspendedEVSE will resume charging
 func (c *Charger) SetCurrent(current float64) error {
-	if current < c.config.MinCurrent {
+	// Allow 0 for suspend, otherwise check MinCurrent
+	if current != 0 && current < c.config.MinCurrent {
 		return fmt.Errorf("current %.1fA is below minimum %.1fA", current, c.config.MinCurrent)
 	}
 	if current > c.config.MaxCurrent {
 		return fmt.Errorf("current %.1fA exceeds maximum %.1fA", current, c.config.MaxCurrent)
 	}
+
 	c.mu.Lock()
+	oldCurrent := c.current
 	c.current = current
+	status := c.status
 	c.mu.Unlock()
+
 	log.Printf("Current set to %.1f A", current)
+
+	// Handle status transitions per OCPP spec:
+	// - Charging -> SuspendedEVSE when EVSE sets current to 0
+	// - SuspendedEVSE -> Charging when EVSE restores current > 0
+	if current == 0 && oldCurrent > 0 && status == "Charging" {
+		return c.SetStatus("SuspendedEVSE")
+	} else if current > 0 && oldCurrent == 0 && status == "SuspendedEVSE" {
+		return c.SetStatus("Charging")
+	}
+
+	return nil
+}
+
+// GetPower returns the power in Watts
+func (c *Charger) GetPower() float64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.power
+}
+
+// SetPower sets the power in Watts (bounded by MinPower and MaxPower)
+// Setting power to 0 will suspend charging (SuspendedEVSE)
+// Setting power > 0 from SuspendedEVSE will resume charging
+func (c *Charger) SetPower(power float64) error {
+	// Allow 0 for suspend, otherwise check MinPower
+	if power != 0 && power < c.config.MinPower {
+		return fmt.Errorf("power %.1fW is below minimum %.1fW", power, c.config.MinPower)
+	}
+	if power > c.config.MaxPower {
+		return fmt.Errorf("power %.1fW exceeds maximum %.1fW", power, c.config.MaxPower)
+	}
+
+	c.mu.Lock()
+	oldPower := c.power
+	c.power = power
+	// Also update current based on power (I = P / V)
+	if power > 0 {
+		c.current = power / c.config.Voltage
+	} else {
+		c.current = 0
+	}
+	status := c.status
+	c.mu.Unlock()
+
+	log.Printf("Power set to %.1f W (current: %.1f A)", power, power/c.config.Voltage)
+
+	// Handle status transitions per OCPP spec:
+	// - Charging -> SuspendedEVSE when EVSE sets power to 0
+	// - SuspendedEVSE -> Charging when EVSE restores power > 0
+	if power == 0 && oldPower > 0 && status == "Charging" {
+		return c.SetStatus("SuspendedEVSE")
+	} else if power > 0 && oldPower == 0 && status == "SuspendedEVSE" {
+		return c.SetStatus("Charging")
+	}
+
 	return nil
 }
 

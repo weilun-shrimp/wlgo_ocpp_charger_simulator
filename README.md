@@ -39,7 +39,8 @@ go run main.go --config config.yaml
 | `plate <plate>` | Send license plate via DataTransfer |
 | `meter` | Send MeterValues manually |
 | `soc <0-100>` | Set State of Charge |
-| `current <amps>` | Set charging current (local control) |
+| `current <amps>` | Set charging current (0 = SuspendedEVSE) |
+| `power <watts>` | Set charging power (0 = SuspendedEVSE) |
 | `info` | Show current charger status |
 
 ## Typical Charging Flow
@@ -102,6 +103,7 @@ tls:
 - Supports OCPP 1.6 and 2.0.1
 - Interactive CLI
 - Current control (local via CLI, remote via SetChargingProfile)
+- Auto status transition: Charging -> SuspendedEVSE when current set to 0, SuspendedEVSE -> Charging when current restored
 - Auto SOC increase during charging
 - License plate sending via DataTransfer
 - TLS/mTLS support
@@ -121,7 +123,7 @@ tls:
 | Heartbeat | CP -> CS | Keep-alive |
 | RemoteStartTransaction | CS -> CP | Remote start (handled) |
 | RemoteStopTransaction | CS -> CP | Remote stop (handled) |
-| SetChargingProfile | CS -> CP | Remote current (1.6: A only, 2.0.1: A or W) |
+| SetChargingProfile | CS -> CP | Remote current control (0 = SuspendedEVSE) |
 
 ## Build
 
