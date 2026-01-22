@@ -2,6 +2,7 @@ package charger
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"time"
 
@@ -20,8 +21,29 @@ func (c *Charger) handleRemoteStartTransactionV16(uniqueId string, payload json.
 
 	log.Printf("Received RemoteStartTransaction: idTag=%s, connectorId=%d", req.IdTag, req.ConnectorId)
 
+	c.mu.Lock()
+	status := c.status
+	var respStatus string
+
+	switch status {
+	case "Available":
+		// Accept and store pending authorization - will auto-start when cable plugged in
+		respStatus = "Accepted"
+		c.pendingRemoteStartIdTag = req.IdTag
+		log.Printf("RemoteStartTransaction accepted: waiting for cable to be plugged in")
+	case "Preparing":
+		// Cable already plugged in - accept and start immediately
+		respStatus = "Accepted"
+		c.pendingRemoteStartIdTag = "" // Clear any pending
+	default:
+		// Reject if charging, finishing, or other states
+		respStatus = "Rejected"
+		log.Printf("RemoteStartTransaction rejected: invalid status (current: %s)", status)
+	}
+	c.mu.Unlock()
+
 	resp := v16.RemoteStartTransactionResponse{
-		Status: "Accepted",
+		Status: respStatus,
 	}
 
 	if err := c.sendCallResult(uniqueId, resp); err != nil {
@@ -29,12 +51,15 @@ func (c *Charger) handleRemoteStartTransactionV16(uniqueId string, payload json.
 		return
 	}
 
-	go func() {
-		time.Sleep(1 * time.Second)
-		if err := c.StartTransaction(req.IdTag); err != nil {
-			log.Printf("Failed to start transaction: %v", err)
-		}
-	}()
+	// If cable is already plugged in (Preparing), start transaction immediately
+	if respStatus == "Accepted" && status == "Preparing" {
+		go func() {
+			time.Sleep(1 * time.Second)
+			if err := c.StartTransaction(req.IdTag); err != nil {
+				log.Printf("Failed to start transaction: %v", err)
+			}
+		}()
+	}
 }
 
 // handleRemoteStopTransactionV16 handles RemoteStopTransaction from server
@@ -86,16 +111,46 @@ func (c *Charger) handleRequestStartTransactionV201(uniqueId string, payload jso
 		return
 	}
 
-	log.Printf("Received RequestStartTransaction: idToken=%s, evseId=%d", req.IdToken.IdToken, req.EvseId)
+	log.Printf("Received RequestStartTransaction: idToken=%s, evseId=%d, remoteStartId=%d", req.IdToken.IdToken, req.EvseId, req.RemoteStartId)
 
 	c.mu.Lock()
-	c.transactionIdStr = uuid.New().String()
-	transactionId := c.transactionIdStr
+	status := c.status
+	var respStatus string
+	var transactionId string
+	var statusInfo *v201.StatusInfo
+
+	switch status {
+	case "Available":
+		// Accept and store pending authorization - will auto-start when cable plugged in
+		respStatus = "Accepted"
+		c.pendingRemoteStartIdTag = req.IdToken.IdToken
+		c.pendingRemoteStartId = req.RemoteStartId
+		// Generate transaction ID now for the response
+		c.transactionIdStr = uuid.New().String()
+		transactionId = c.transactionIdStr
+		log.Printf("RequestStartTransaction accepted: waiting for cable to be plugged in")
+	case "Occupied":
+		// Cable already plugged in - accept and start immediately
+		respStatus = "Accepted"
+		c.pendingRemoteStartIdTag = "" // Clear any pending
+		c.pendingRemoteStartId = 0
+		c.transactionIdStr = uuid.New().String()
+		transactionId = c.transactionIdStr
+	default:
+		// Reject if charging or other states
+		respStatus = "Rejected"
+		statusInfo = &v201.StatusInfo{
+			ReasonCode:     "Occupied",
+			AdditionalInfo: fmt.Sprintf("Charger is busy, current status: %s", status),
+		}
+		log.Printf("RequestStartTransaction rejected: invalid status (current: %s)", status)
+	}
 	c.mu.Unlock()
 
 	resp := v201.RequestStartTransactionResponse{
-		Status:        "Accepted",
+		Status:        respStatus,
 		TransactionId: transactionId,
+		StatusInfo:    statusInfo,
 	}
 
 	if err := c.sendCallResult(uniqueId, resp); err != nil {
@@ -103,12 +158,15 @@ func (c *Charger) handleRequestStartTransactionV201(uniqueId string, payload jso
 		return
 	}
 
-	go func() {
-		time.Sleep(1 * time.Second)
-		if err := c.StartTransaction(req.IdToken.IdToken); err != nil {
-			log.Printf("Failed to start transaction: %v", err)
-		}
-	}()
+	// If cable is already plugged in (Occupied), start transaction immediately
+	if respStatus == "Accepted" && status == "Occupied" {
+		go func() {
+			time.Sleep(1 * time.Second)
+			if err := c.StartTransaction(req.IdToken.IdToken); err != nil {
+				log.Printf("Failed to start transaction: %v", err)
+			}
+		}()
+	}
 }
 
 // handleRequestStopTransactionV201 handles RequestStopTransaction from server
@@ -164,21 +222,26 @@ func (c *Charger) handleSetChargingProfileV16(uniqueId string, payload json.RawM
 
 	status := "Accepted"
 
-	// Extract current from charging profile (OCPP 1.6 only supports Amperes)
+	// Extract limit from charging profile
 	if req.ChargingProfile != nil && req.ChargingProfile.ChargingSchedule != nil {
 		schedule := req.ChargingProfile.ChargingSchedule
 		if len(schedule.ChargingSchedulePeriod) > 0 {
 			limit := schedule.ChargingSchedulePeriod[0].Limit
 			unit := schedule.ChargingRateUnit
 
-			if unit != "A" {
-				log.Printf("OCPP 1.6 only supports chargingRateUnit 'A', got: %s", unit)
-				status = "Rejected"
-			} else {
+			if unit == "A" {
 				if err := c.SetCurrent(limit); err != nil {
 					log.Printf("Failed to set current: %v", err)
 					status = "Rejected"
 				}
+			} else if unit == "W" {
+				if err := c.SetPower(limit); err != nil {
+					log.Printf("Failed to set power: %v", err)
+					status = "Rejected"
+				}
+			} else {
+				log.Printf("Unknown chargingRateUnit: %s", unit)
+				status = "Rejected"
 			}
 		}
 	}

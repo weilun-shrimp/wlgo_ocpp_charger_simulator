@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/weilun-shrimp/wlgo_ocpp_charger_simulator/config"
 	"github.com/weilun-shrimp/wlgows/client"
@@ -35,6 +36,9 @@ type Charger struct {
 	heartbeatStopCh   chan struct{} // Stop channel for heartbeat loop
 	pendingCalls      map[string]chan []byte
 	pendingMu         sync.Mutex
+	// Pending remote start authorization (for Remote Start Flow)
+	pendingRemoteStartIdTag string // idTag from RemoteStartTransaction, empty if none pending
+	pendingRemoteStartId    int    // remoteStartId from OCPP 2.0.1 RequestStartTransaction
 }
 
 // New creates a new Charger instance
@@ -201,13 +205,16 @@ func (c *Charger) SetCurrent(current float64) error {
 
 	log.Printf("Current set to %.1f A", current)
 
-	// Handle status transitions per OCPP spec:
+	// Handle status transitions per OCPP 1.6 spec:
 	// - Charging -> SuspendedEVSE when EVSE sets current to 0
 	// - SuspendedEVSE -> Charging when EVSE restores current > 0
-	if current == 0 && oldCurrent > 0 && status == "Charging" {
-		return c.SetStatus("SuspendedEVSE")
-	} else if current > 0 && oldCurrent == 0 && status == "SuspendedEVSE" {
-		return c.SetStatus("Charging")
+	// For OCPP 2.0.1, status stays "Occupied" (charging state is in TransactionEvent)
+	if c.config.IsOCPP16() {
+		if current == 0 && oldCurrent > 0 && status == "Charging" {
+			return c.SetStatus("SuspendedEVSE")
+		} else if current > 0 && oldCurrent == 0 && status == "SuspendedEVSE" {
+			return c.SetStatus("Charging")
+		}
 	}
 
 	return nil
@@ -246,13 +253,16 @@ func (c *Charger) SetPower(power float64) error {
 
 	log.Printf("Power set to %.1f W (current: %.1f A)", power, power/c.config.Voltage)
 
-	// Handle status transitions per OCPP spec:
+	// Handle status transitions per OCPP 1.6 spec:
 	// - Charging -> SuspendedEVSE when EVSE sets power to 0
 	// - SuspendedEVSE -> Charging when EVSE restores power > 0
-	if power == 0 && oldPower > 0 && status == "Charging" {
-		return c.SetStatus("SuspendedEVSE")
-	} else if power > 0 && oldPower == 0 && status == "SuspendedEVSE" {
-		return c.SetStatus("Charging")
+	// For OCPP 2.0.1, status stays "Occupied" (charging state is in TransactionEvent)
+	if c.config.IsOCPP16() {
+		if power == 0 && oldPower > 0 && status == "Charging" {
+			return c.SetStatus("SuspendedEVSE")
+		} else if power > 0 && oldPower == 0 && status == "SuspendedEVSE" {
+			return c.SetStatus("Charging")
+		}
 	}
 
 	return nil
@@ -260,15 +270,44 @@ func (c *Charger) SetPower(power float64) error {
 
 // Plugin simulates car plugging in
 func (c *Charger) Plugin() error {
-	c.mu.RLock()
+	c.mu.Lock()
 	status := c.status
-	c.mu.RUnlock()
-
+	pendingIdTag := c.pendingRemoteStartIdTag
 	if status != "Available" {
+		c.mu.Unlock()
 		return fmt.Errorf("cannot plug in: status must be Available (current: %s)", status)
 	}
+	// Clear pending if we're going to use it
+	if pendingIdTag != "" {
+		c.pendingRemoteStartIdTag = ""
+		c.pendingRemoteStartId = 0
+	}
+	c.mu.Unlock()
 
-	return c.SetStatus("Preparing")
+	// OCPP 1.6 uses "Preparing", OCPP 2.0.1 uses "Occupied"
+	var err error
+	if c.config.IsOCPP16() {
+		err = c.SetStatus("Preparing")
+	} else {
+		err = c.SetStatus("Occupied")
+	}
+	if err != nil {
+		return err
+	}
+
+	// If there was a pending remote start, auto-start the transaction
+	if pendingIdTag != "" {
+		log.Printf("Auto-starting transaction for pending remote start: idTag=%s", pendingIdTag)
+		go func() {
+			// Small delay to ensure status notification is sent first
+			time.Sleep(500 * time.Millisecond)
+			if err := c.StartTransaction(pendingIdTag); err != nil {
+				log.Printf("Failed to auto-start transaction: %v", err)
+			}
+		}()
+	}
+
+	return nil
 }
 
 // Unplug simulates car unplugging - stops all background tasks and resets state
@@ -285,6 +324,9 @@ func (c *Charger) Unplug() error {
 	c.idTag = ""
 	c.soc = c.config.InitialSOC
 	c.meterValue = 0
+	// Clear any pending remote start
+	c.pendingRemoteStartIdTag = ""
+	c.pendingRemoteStartId = 0
 	c.mu.Unlock()
 
 	return c.SetStatus("Available")

@@ -35,6 +35,7 @@ max_current: 32     # Maximum current in Amperes (A)
 max_power: 22000    # Maximum power in Watts (W)
 min_current: 6      # Optional, default: 0 - Minimum current in Amperes (A)
 min_power: 0        # Optional, default: 0 - Minimum power in Watts (W)
+voltage: 230        # Optional, default: 230 - Voltage in Volts (V), used for power/current conversion
 
 # Connector Configuration
 connector_id: 1     # Connector ID for this charger

@@ -14,21 +14,41 @@ import (
 // StartTransaction starts a transaction locally and sends to server if connected
 func (c *Charger) StartTransaction(idTag string) error {
 	c.mu.Lock()
-	if c.status != "Preparing" {
+	// OCPP 1.6 requires "Preparing", OCPP 2.0.1 requires "Occupied"
+	requiredStatus := "Preparing"
+	if !c.config.IsOCPP16() {
+		requiredStatus = "Occupied"
+	}
+	if c.status != requiredStatus {
 		c.mu.Unlock()
-		return fmt.Errorf("cannot start transaction: status must be Preparing (current: %s)", c.status)
+		return fmt.Errorf("cannot start transaction: status must be %s (current: %s)", requiredStatus, c.status)
 	}
 	c.idTag = idTag
 	c.meterValue = 0
 	c.seqNo = 0
 	c.isCharging = true
 	isConnected := c.isConnected
+
+	// For OCPP 2.0.1, start meter loop here since we don't change status to "Charging"
+	shouldStartMeter := !c.config.IsOCPP16() && c.meterStopCh == nil
+	if shouldStartMeter {
+		c.meterStopCh = make(chan struct{})
+	}
 	c.mu.Unlock()
 
 	log.Printf("Transaction started locally: idTag=%s", idTag)
 
+	// Start meter loop for OCPP 2.0.1 (OCPP 1.6 starts it via SetStatus("Charging"))
+	if shouldStartMeter {
+		go c.StartMeterValuesLoop()
+	}
+
 	// Update status locally (and send if connected)
-	c.SetStatus("Charging")
+	// OCPP 1.6: Status changes to "Charging" (this also starts the meter loop)
+	// OCPP 2.0.1: Status stays "Occupied" (charging state is in TransactionEvent)
+	if c.config.IsOCPP16() {
+		c.SetStatus("Charging")
+	}
 
 	// Send to server if connected
 	if isConnected {
@@ -128,12 +148,22 @@ func (c *Charger) StopTransaction(reason string) error {
 	c.seqNo++
 	seqNo := c.seqNo
 	isConnected := c.isConnected
+
+	// For OCPP 2.0.1, stop meter loop here since we don't change status from "Charging"
+	if !c.config.IsOCPP16() && c.meterStopCh != nil {
+		close(c.meterStopCh)
+		c.meterStopCh = nil
+	}
 	c.mu.Unlock()
 
 	log.Printf("Transaction stopped locally: reason=%s", reason)
 
 	// Update status locally (and send if connected)
-	c.SetStatus("Finishing")
+	// OCPP 1.6: Status changes to "Finishing" (this also stops the meter loop)
+	// OCPP 2.0.1: Status stays "Occupied" (cable still connected)
+	if c.config.IsOCPP16() {
+		c.SetStatus("Finishing")
+	}
 
 	// Send to server if connected
 	if isConnected {
