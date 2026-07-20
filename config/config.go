@@ -18,20 +18,30 @@ type TLSConfig struct {
 	SkipVerify     bool   `yaml:"skip_verify"`      // Skip server certificate verification (insecure)
 }
 
+// AuthConfig holds the Authorization header sent on the WebSocket handshake.
+// The header is built verbatim as "<Scheme> <Value>", e.g.
+// scheme "Basic" + value "dXNlcjpwYXNz" => "Authorization: Basic dXNlcjpwYXNz".
+// For Basic auth, Value is base64(username:password).
+type AuthConfig struct {
+	Scheme string `yaml:"scheme"` // auth scheme, e.g. "Basic" or "Bearer"
+	Value  string `yaml:"value"`  // credentials value for the scheme
+}
+
 // Config holds the charger simulator configuration
 type Config struct {
-	OCPPVersion         string     `yaml:"ocpp_version"`
-	ChargerID           string     `yaml:"charger_id"`
-	ServerURL           string     `yaml:"server_url"`
-	TLS                 *TLSConfig `yaml:"tls"`
-	InitialStatus       string     `yaml:"initial_status"`
-	MaxCurrent          float64    `yaml:"max_current"`
-	MaxPower            float64    `yaml:"max_power"`
-	MinCurrent          float64    `yaml:"min_current"`
-	MinPower            float64    `yaml:"min_power"`
-	Voltage             float64    `yaml:"voltage"` // Voltage in V (for power calculation)
-	ConnectorID         int        `yaml:"connector_id"`
-	MeterValuesInterval int        `yaml:"meter_values_interval"`
+	OCPPVersion         string      `yaml:"ocpp_version"`
+	ChargerID           string      `yaml:"charger_id"`
+	ServerURL           string      `yaml:"server_url"`
+	TLS                 *TLSConfig  `yaml:"tls"`
+	Auth                *AuthConfig `yaml:"auth"`
+	InitialStatus       string      `yaml:"initial_status"`
+	MaxCurrent          float64     `yaml:"max_current"`
+	MaxPower            float64     `yaml:"max_power"`
+	MinCurrent          float64     `yaml:"min_current"`
+	MinPower            float64     `yaml:"min_power"`
+	Voltage             float64     `yaml:"voltage"` // Voltage in V (for power calculation)
+	ConnectorID         int         `yaml:"connector_id"`
+	MeterValuesInterval int         `yaml:"meter_values_interval"`
 	// EV Battery simulation
 	InitialSOC      float64 `yaml:"initial_soc"`      // Initial State of Charge (0-100%)
 	BatteryCapacity float64 `yaml:"battery_capacity"` // Battery capacity in Wh
@@ -117,6 +127,12 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("battery_capacity must be positive")
 	}
 
+	if c.Auth != nil {
+		if c.Auth.Scheme == "" || c.Auth.Value == "" {
+			return fmt.Errorf("auth requires both scheme and value")
+		}
+	}
+
 	return nil
 }
 
@@ -175,6 +191,15 @@ func (c *Config) GetTLSConfig() (*tls.Config, error) {
 	}
 
 	return tlsConfig, nil
+}
+
+// GetAuthHeader returns the Authorization header value ("<scheme> <value>"),
+// or "" if auth is not configured.
+func (c *Config) GetAuthHeader() string {
+	if c.Auth == nil || c.Auth.Scheme == "" || c.Auth.Value == "" {
+		return ""
+	}
+	return c.Auth.Scheme + " " + c.Auth.Value
 }
 
 // IsOCPP16 returns true if the configured version is 1.6

@@ -25,6 +25,13 @@ tls:
   cert_file: "/path/to/client.crt"        # Client certificate file
   key_file: "/path/to/client.key"         # Client private key file
 
+# Optional auth for the WebSocket connection. Sent as: Authorization: <scheme> <value>
+# scheme is any auth scheme (e.g. "Basic", "Bearer"); value is the credentials for it.
+# For Basic auth, value is base64(username:password).
+auth:
+  scheme: "Basic"                                  # Any auth scheme, sent verbatim
+  value: "bXktY2hhcmdlci1pZDpteS1hdXRoLWtleQ=="    # For Basic: base64(username:password)
+
 # Charger Status Configuration
 # Valid values for OCPP 1.6: Available, Preparing, Charging, SuspendedEVSE, SuspendedEV, Finishing, Reserved, Unavailable, Faulted
 # Valid values for OCPP 2.0.1: Available, Occupied, Reserved, Unavailable, Faulted

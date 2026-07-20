@@ -3,7 +3,9 @@ package charger
 import (
 	"crypto/tls"
 	"fmt"
+	"io"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,20 +16,20 @@ import (
 
 // Charger represents an OCPP charger simulator
 type Charger struct {
-	config           *config.Config
-	conn             *connection.ClientConn
-	tlsConfig        *tls.Config
-	mu               sync.RWMutex
-	status           string
-	transactionId    int
-	transactionIdStr string // For OCPP 2.0.1
-	meterValue       int
-	soc              float64 // State of Charge (0-100%)
-	licensePlate     string  // License plate from EV
-	idTag            string
-	seqNo            int
-	isCharging       bool
-	isConnected      bool
+	config            *config.Config
+	conn              *connection.ClientConn
+	tlsConfig         *tls.Config
+	mu                sync.RWMutex
+	status            string
+	transactionId     int
+	transactionIdStr  string // For OCPP 2.0.1
+	meterValue        int
+	soc               float64 // State of Charge (0-100%)
+	licensePlate      string  // License plate from EV
+	idTag             string
+	seqNo             int
+	isCharging        bool
+	isConnected       bool
 	current           float64       // Current limit in Amperes (between MinCurrent and MaxCurrent)
 	power             float64       // Power limit in Watts (between MinPower and MaxPower)
 	stopCh            chan struct{} // Stop channel for connect to server
@@ -79,7 +81,21 @@ func (c *Charger) Connect() error {
 		return fmt.Errorf("failed to dial: %w", err)
 	}
 
+	if authHeader := c.config.GetAuthHeader(); authHeader != "" {
+		conn.ClientRequest.Header.Set("Authorization", authHeader)
+	}
+
 	if err := conn.HandShake(); err != nil {
+		// Surface the server's response (status + body) for diagnostics, e.g. a 401
+		// Unauthorized with an explanation when auth credentials are wrong.
+		if resp := conn.ServerResponse; resp != nil {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			log.Printf("Handshake failed: server responded %s", resp.Status)
+			if len(body) > 0 {
+				log.Printf("Server response body: %s", strings.TrimSpace(string(body)))
+			}
+		}
 		conn.Close()
 		return fmt.Errorf("handshake failed: %w", err)
 	}
