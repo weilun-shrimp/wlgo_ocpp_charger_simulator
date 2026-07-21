@@ -1,18 +1,20 @@
 package main
 
 import (
-	"bufio"
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	"github.com/weilun-shrimp/wlgo_ocpp_charger_simulator/charger"
+	"github.com/weilun-shrimp/wlgo_ocpp_charger_simulator/cli"
 	"github.com/weilun-shrimp/wlgo_ocpp_charger_simulator/config"
 )
+
+// Compile-time assertion that the concrete charger satisfies the CLI's Charger
+// interface. Keeps the interface honest without the cli package importing charger.
+var _ cli.Charger = (*charger.Charger)(nil)
 
 func main() {
 	configPath := flag.String("config", "config.yaml", "Path to configuration file")
@@ -48,233 +50,11 @@ func main() {
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	// Start interactive command loop
-	go interactiveLoop(sim, cfg)
+	go cli.Run(sim, cfg, os.Stdin, os.Stdout)
 
 	log.Println("Charger simulator ready. Type 'connect' to connect to server, 'help' for commands.")
 
 	// Wait for shutdown signal
 	<-sigCh
 	log.Println("Shutting down...")
-}
-
-func interactiveLoop(sim *charger.Charger, cfg *config.Config) {
-	reader := bufio.NewReader(os.Stdin)
-
-	for {
-		fmt.Print("> ")
-		input, err := reader.ReadString('\n')
-		if err != nil {
-			continue
-		}
-
-		input = strings.TrimSpace(input)
-		parts := strings.Fields(input)
-		if len(parts) == 0 {
-			continue
-		}
-
-		cmd := strings.ToLower(parts[0])
-
-		switch cmd {
-		case "help":
-			printHelp(cfg)
-
-		case "connect":
-			if sim.IsConnected() {
-				fmt.Println("Already connected")
-				continue
-			}
-			if err := sim.Connect(); err != nil {
-				fmt.Printf("Error: %v\n", err)
-				continue
-			}
-			fmt.Println("Connected to server")
-
-			// Send BootNotification
-			if err := sim.BootNotification(); err != nil {
-				fmt.Printf("BootNotification failed: %v\n", err)
-				continue
-			}
-
-			// Send current StatusNotification
-			if err := sim.StatusNotification(sim.GetStatus()); err != nil {
-				fmt.Printf("StatusNotification failed: %v\n", err)
-			}
-
-		case "disconnect":
-			if !sim.IsConnected() {
-				fmt.Println("Not connected")
-				continue
-			}
-			sim.Disconnect()
-			fmt.Println("Disconnected from server")
-
-		case "plugin":
-			if err := sim.Plugin(); err != nil {
-				fmt.Printf("Error: %v\n", err)
-			} else {
-				fmt.Println("Car plugged in (Preparing)")
-			}
-
-		case "unplug":
-			if err := sim.Unplug(); err != nil {
-				fmt.Printf("Error: %v\n", err)
-			} else {
-				fmt.Println("Car unplugged (Available)")
-			}
-
-		case "status":
-			if len(parts) < 2 {
-				if cfg.IsOCPP16() {
-					fmt.Println("Usage: status <status>")
-					fmt.Println("Valid statuses (OCPP 1.6): Available, Preparing, Charging, SuspendedEVSE, SuspendedEV, Finishing, Reserved, Unavailable, Faulted")
-				} else {
-					fmt.Println("Usage: status <status>")
-					fmt.Println("Valid statuses (OCPP 2.0.1): Available, Occupied, Reserved, Unavailable, Faulted")
-				}
-				continue
-			}
-			status := parts[1]
-			if err := sim.SetStatus(status); err != nil {
-				fmt.Printf("Error: %v\n", err)
-			} else {
-				fmt.Printf("Status updated to: %s\n", status)
-			}
-
-		case "start":
-			if len(parts) < 2 {
-				fmt.Println("Usage: start <idTag>")
-				continue
-			}
-			idTag := parts[1]
-			if err := sim.StartTransaction(idTag); err != nil {
-				fmt.Printf("Error: %v\n", err)
-			} else {
-				fmt.Println("Transaction started")
-			}
-
-		case "stop":
-			reason := "Local"
-			if len(parts) >= 2 {
-				reason = parts[1]
-			}
-			if err := sim.StopTransaction(reason); err != nil {
-				fmt.Printf("Error: %v\n", err)
-			} else {
-				fmt.Println("Transaction stopped")
-			}
-
-		case "meter":
-			if err := sim.MeterValues(); err != nil {
-				fmt.Printf("Error: %v\n", err)
-			} else {
-				fmt.Println("MeterValues updated")
-			}
-
-		case "plate":
-			if len(parts) < 2 {
-				fmt.Println("Usage: plate <license_plate>")
-				continue
-			}
-			plate := parts[1]
-			if err := sim.SetLicensePlateAndSend(plate); err != nil {
-				fmt.Printf("Error: %v\n", err)
-			} else {
-				fmt.Printf("License plate set: %s\n", plate)
-			}
-
-		case "soc":
-			if len(parts) < 2 {
-				fmt.Println("Usage: soc <0-100>")
-				continue
-			}
-			var soc float64
-			if _, err := fmt.Sscanf(parts[1], "%f", &soc); err != nil {
-				fmt.Printf("Error: invalid SOC value: %s\n", parts[1])
-				continue
-			}
-			if err := sim.SetSOC(soc); err != nil {
-				fmt.Printf("Error: %v\n", err)
-			} else {
-				fmt.Printf("SOC set to: %.1f%%\n", soc)
-			}
-
-		case "current":
-			if len(parts) < 2 {
-				fmt.Printf("Usage: current <amperes> (0-%.1f A, 0 = SuspendedEVSE)\n", cfg.MaxCurrent)
-				fmt.Printf("Current: %.1f A\n", sim.GetCurrent())
-				continue
-			}
-			var current float64
-			if _, err := fmt.Sscanf(parts[1], "%f", &current); err != nil {
-				fmt.Printf("Error: invalid current value: %s\n", parts[1])
-				continue
-			}
-			if err := sim.SetCurrent(current); err != nil {
-				fmt.Printf("Error: %v\n", err)
-			} else {
-				fmt.Printf("Current set to: %.1f A\n", current)
-			}
-
-		case "power":
-			if len(parts) < 2 {
-				fmt.Printf("Usage: power <watts> (0-%.1f W, 0 = SuspendedEVSE)\n", cfg.MaxPower)
-				fmt.Printf("Power: %.1f W\n", sim.GetPower())
-				continue
-			}
-			var power float64
-			if _, err := fmt.Sscanf(parts[1], "%f", &power); err != nil {
-				fmt.Printf("Error: invalid power value: %s\n", parts[1])
-				continue
-			}
-			if err := sim.SetPower(power); err != nil {
-				fmt.Printf("Error: %v\n", err)
-			} else {
-				fmt.Printf("Power set to: %.1f W\n", power)
-			}
-
-		case "info":
-			fmt.Printf("Connected: %v\n", sim.IsConnected())
-			fmt.Printf("Status: %s\n", sim.GetStatus())
-			fmt.Printf("Charging: %v\n", sim.IsCharging())
-			fmt.Printf("Voltage: %.1f V\n", cfg.Voltage)
-			fmt.Printf("Current: %.1f A\n", sim.GetCurrent())
-			fmt.Printf("Power: %.1f W\n", sim.GetPower())
-			fmt.Printf("SOC: %.1f%%\n", sim.GetSOC())
-			if plate := sim.GetLicensePlate(); plate != "" {
-				fmt.Printf("License Plate: %s\n", plate)
-			}
-
-		case "quit", "exit":
-			fmt.Println("Use Ctrl+C to exit")
-
-		default:
-			fmt.Printf("Unknown command: %s. Type 'help' for available commands.\n", cmd)
-		}
-	}
-}
-
-func printHelp(cfg *config.Config) {
-	fmt.Println("Available commands:")
-	fmt.Println("  help              - Show this help message")
-	fmt.Println("  connect           - Connect to OCPP server")
-	fmt.Println("  disconnect        - Disconnect from server")
-	fmt.Println("  plugin            - Simulate car plug in (Preparing)")
-	fmt.Println("  unplug            - Simulate car unplug (Available)")
-	fmt.Println("  start <idTag>     - Start a transaction (requires Preparing status)")
-	fmt.Println("  stop [reason]     - Stop the current transaction (reason: Local, Remote, etc.)")
-	fmt.Println("  status <status>   - Set charger status (type 'status' for valid values)")
-	fmt.Println("  plate <plate>     - Send license plate via DataTransfer")
-	fmt.Println("  meter             - Send MeterValues")
-	fmt.Println("  soc <0-100>       - Set State of Charge")
-	fmt.Printf("  current <amps>    - Set charging current (0-%.1f A, 0 = SuspendedEVSE)\n", cfg.MaxCurrent)
-	fmt.Printf("  power <watts>     - Set charging power (0-%.1f W, 0 = SuspendedEVSE)\n", cfg.MaxPower)
-	fmt.Println("  info              - Show current charger status")
-	fmt.Println("  quit/exit         - Exit the simulator (use Ctrl+C)")
-	fmt.Println()
-	if cfg.IsOCPP16() {
-		fmt.Println("Valid statuses (OCPP 1.6): Available, Preparing, Charging, SuspendedEVSE, SuspendedEV, Finishing, Reserved, Unavailable, Faulted")
-	} else {
-		fmt.Println("Valid statuses (OCPP 2.0.1): Available, Occupied, Reserved, Unavailable, Faulted")
-	}
 }

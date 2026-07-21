@@ -1,3 +1,8 @@
 config.yaml
 .claude
 .config
+
+# OS/editor files
+.DS_Store
+.vscode/
+.idea/
