@@ -24,6 +24,25 @@ max_power: 22000
 go run main.go --config config.yaml
 ```
 
+## Managing Multiple Configs
+
+You often need several configs (different chargers, servers, or environments). To keep them out of git, put them in the ignored `.config/` directory:
+
+```bash
+mkdir -p .config
+cp config.example.yaml .config/charger001.yaml
+cp config.example.yaml .config/staging.yaml
+```
+
+Then point `--config` at whichever one you need:
+
+```bash
+go run main.go --config .config/charger001.yaml
+go run main.go --config .config/staging.yaml
+```
+
+The `.config/` directory (along with `config.yaml`) is listed in `.gitignore`, so your local configs are never committed or exposed in git history. `config.example.yaml` stays tracked as the template to copy from.
+
 ## Commands
 
 | Command | Description |
