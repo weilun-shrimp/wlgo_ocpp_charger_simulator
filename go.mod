@@ -4,7 +4,7 @@ go 1.25.5
 
 require (
 	github.com/google/uuid v1.6.0
-	github.com/weilun-shrimp/wlgows v1.2.4
+	github.com/weilun-shrimp/wlgows/v4 v4.0.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 

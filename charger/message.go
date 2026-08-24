@@ -10,31 +10,27 @@ import (
 	"github.com/google/uuid"
 	"github.com/weilun-shrimp/wlgo_ocpp_charger_simulator/ocpp/v16"
 	"github.com/weilun-shrimp/wlgo_ocpp_charger_simulator/ocpp/v201"
+	"github.com/weilun-shrimp/wlgows/v4"
 )
 
 // receiveMessages handles incoming messages from the server
 func (c *Charger) receiveMessages() {
 	defer c.Disconnect()
 
-	for {
-		select {
-		case <-c.stopCh:
-			return
-		default:
-			msg, err := c.conn.GetNextMsg()
-			if err != nil {
-				if err == io.EOF {
-					log.Printf("Server closed connection (EOF)")
-				} else {
-					log.Printf("Error receiving message: %v", err)
-				}
-				return
-			}
+	listener := c.conn.NewStandardListener()
+	config := listener.GetConfig()
+	config.Text = func(frames wlgows.Frames) {
+		data := frames.String()
+		log.Printf("Received: %s", data)
+		go c.handleMessage([]byte(data))
+	}
+	listener.SetConfig(config)
 
-			data := msg.GetStr()
-			log.Printf("Received: %s", data)
-
-			go c.handleMessage([]byte(data))
+	if err := listener.Listen(); err != nil {
+		if err == io.EOF {
+			log.Printf("Server closed connection (EOF)")
+		} else {
+			log.Printf("Error receiving message: %v", err)
 		}
 	}
 }

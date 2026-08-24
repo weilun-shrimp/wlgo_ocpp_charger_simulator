@@ -1,6 +1,7 @@
 package charger
 
 import (
+	"bufio"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -10,14 +11,13 @@ import (
 	"time"
 
 	"github.com/weilun-shrimp/wlgo_ocpp_charger_simulator/config"
-	"github.com/weilun-shrimp/wlgows/client"
-	"github.com/weilun-shrimp/wlgows/connection"
+	"github.com/weilun-shrimp/wlgows/v4"
 )
 
 // Charger represents an OCPP charger simulator
 type Charger struct {
 	config            *config.Config
-	conn              *connection.ClientConn
+	conn              *wlgows.Conn
 	tlsConfig         *tls.Config
 	mu                sync.RWMutex
 	status            string
@@ -76,19 +76,21 @@ func (c *Charger) Connect() error {
 
 	log.Printf("Connecting to %s...", c.config.ServerURL)
 
-	conn, err := client.Dial(c.config.ServerURL, c.tlsConfig)
+	netConn, req, err := wlgows.Dial(c.config.ServerURL, c.tlsConfig)
 	if err != nil {
 		return fmt.Errorf("failed to dial: %w", err)
 	}
 
 	if authHeader := c.config.GetAuthHeader(); authHeader != "" {
-		conn.ClientRequest.Header.Set("Authorization", authHeader)
+		req.Header.Set("Authorization", authHeader)
 	}
 
-	if err := conn.HandShake(); err != nil {
+	reader := bufio.NewReader(netConn)
+	conn, resp, err := wlgows.ClientHandShake(netConn, reader, req)
+	if err != nil {
 		// Surface the server's response (status + body) for diagnostics, e.g. a 401
 		// Unauthorized with an explanation when auth credentials are wrong.
-		if resp := conn.ServerResponse; resp != nil {
+		if resp != nil {
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
 			log.Printf("Handshake failed: server responded %s", resp.Status)
@@ -96,7 +98,7 @@ func (c *Charger) Connect() error {
 				log.Printf("Server response body: %s", strings.TrimSpace(string(body)))
 			}
 		}
-		conn.Close()
+		netConn.Close()
 		return fmt.Errorf("handshake failed: %w", err)
 	}
 
